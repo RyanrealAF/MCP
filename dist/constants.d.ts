@@ -1,0 +1,12 @@
+export declare const VAULT_NAME = "The Key Vault";
+export declare const VAULT_VERSION = "1.0.0";
+export declare const ACL_PREFIX = "acl:";
+export declare const ACCESS_LOG_TABLE = "vault_access_log";
+export declare const LOG_PAGE_SIZE = 50;
+export declare const ERR_UNAUTHORIZED = "Unauthorized: invalid or missing bearer token";
+export declare const ERR_FORBIDDEN = "Forbidden: caller does not have access to this key";
+export declare const ERR_KEY_NOT_FOUND = "Key not found in vault";
+export declare const ERR_CLIENT_NOT_FOUND = "Client ID not found in ACL";
+export declare const ERR_ADMIN_ONLY = "This operation requires admin privileges";
+export declare const ERR_MISSING_FIELDS = "Missing required fields";
+//# sourceMappingURL=constants.d.ts.map
