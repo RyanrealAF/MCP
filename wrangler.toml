@@ -13,7 +13,7 @@ compatibility_flags = ["nodejs_compat"]
 # Then replace the id below with the output id
 [[kv_namespaces]]
 binding = "VAULT_ACL"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"   # ENTRY POINT: KV namespace ID
+id = "5a6849a90acc4d618738a892dc6633db"   # ENTRY POINT: KV namespace ID
 
 # -- D1 Database (Audit log) ---------------------------------
 # Run: wrangler d1 create the-key-vault-log
@@ -21,7 +21,7 @@ id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"   # ENTRY POINT: KV namespace ID
 [[d1_databases]]
 binding = "VAULT_LOG"
 database_name = "the-key-vault-log"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"   # ENTRY POINT: D1 database ID
+database_id = "d5f076fb-9a12-431f-95a3-ce3bc6ab67ee"   # ENTRY POINT: D1 database ID
 
 # -- Routes --------------------------------------------------
 # Uncomment to pin to a custom domain under buildwhilebleeding.com
