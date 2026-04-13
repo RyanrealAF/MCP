@@ -1,4 +1,4 @@
-# The Key Vault
+p# The Key Vault
 **Centralized API Key Vault via MCP — by buildwhilebleeding.com**
 
 A zero-trust credential broker running on Cloudflare Workers free tier. Any MCP-compatible AI client can retrieve secrets via authenticated tool calls. Keys live in Cloudflare Workers Secrets (encrypted at rest). Every access is logged to D1.

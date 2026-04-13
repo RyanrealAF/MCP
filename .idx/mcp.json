@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "curl https://the-key-vault.buildwhilebleeding.workers.dev/health": {
+      "command": "npm",
+      "args": ["start"]
+    }
+  }
+}
