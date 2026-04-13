@@ -8,6 +8,7 @@ import { registerVaultTools } from "./tools/vault.js";
 import { registerAdminTools } from "./tools/admin.js";
 import { initializeSchema } from "./services/audit.js";
 import { VAULT_NAME, VAULT_VERSION } from "./constants.js";
+import { resolveCallerFromToken, extractBearerToken } from "./services/auth.js";
 // ----------------------------------------------------------
 // Cloudflare Worker fetch handler
 // ----------------------------------------------------------
@@ -45,13 +46,27 @@ export default {
         }
         // MCP endpoint
         if (url.pathname === "/mcp" && request.method === "POST") {
+            const authHeader = request.headers.get("Authorization");
+            const bearerToken = extractBearerToken(authHeader);
+            if (!bearerToken) {
+                return Response.json({ error: "Unauthorized: Missing bearer token" }, { status: 401 });
+            }
+            const client = await resolveCallerFromToken(bearerToken, env.VAULT_ACL);
+            const isAdmin = bearerToken === env.VAULT_ADMIN_TOKEN;
+            if (!client && !isAdmin) {
+                return Response.json({ error: "Unauthorized: Invalid bearer token" }, { status: 401 });
+            }
             const server = new McpServer({
                 name: "the-key-vault-mcp",
                 version: VAULT_VERSION,
             });
             // Register tools — client IP threaded through for audit logging
-            registerVaultTools(server, env, clientIp);
-            registerAdminTools(server, env);
+            if (client) {
+                registerVaultTools(server, env, clientIp, client);
+            }
+            if (isAdmin) {
+                registerAdminTools(server, env);
+            }
             const transport = new StreamableHTTPServerTransport({
                 sessionIdGenerator: undefined,
                 enableJsonResponse: true,

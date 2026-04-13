@@ -18,7 +18,12 @@
   idx = {
     # Search for the extensions you want on https://open-vsx.org/ and use "publisher.id"
     extensions = [
-      # "vscodevim.vim"
+      "esbenp.prettier-vscode",
+      "dbaeumer.vscode-eslint",
+      "cloudflare.vscode-cloudflare-wrangler",
+      "vsls-contrib.codetour",
+      "rangav.vscode-thunder-client",
+      "robbowen.synthwave-vscode"
     ];
 
     # Enable previews

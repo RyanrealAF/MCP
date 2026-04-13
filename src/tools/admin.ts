@@ -9,13 +9,11 @@ import type { VaultEnv, VaultClient } from "../types.js";
 import {
   generateBearerToken,
   hashToken,
-  isAdminToken,
   getClientById,
 } from "../services/auth.js";
 import { getAccessLog } from "../services/audit.js";
 import {
   ACL_PREFIX,
-  ERR_ADMIN_ONLY,
   ERR_CLIENT_NOT_FOUND,
 } from "../constants.js";
 
@@ -37,7 +35,6 @@ The generated bearer_token is returned ONCE and never stored in plaintext.
 Store it immediately — it cannot be recovered after this call.
 
 Args:
-  - admin_token (string): Admin bearer token
   - client_id (string): Unique ID for this client (e.g. "claude-stemforge-agent")
   - allowed_keys (string[]): List of secret key names this client may access
   - description (string): Human-readable label for this client
@@ -50,7 +47,6 @@ Returns:
     "message": string
   }`,
       inputSchema: z.object({
-        admin_token: z.string().min(1).describe("Admin bearer token"),
         client_id: z.string().min(1).max(64).regex(/^[a-z0-9-]+$/).describe("Unique client ID (lowercase, hyphens only)"),
         allowed_keys: z.array(z.string().min(1)).min(1).describe("Secret key names this client can access"),
         description: z.string().min(1).max(256).describe("Human-readable label for this client"),
@@ -62,11 +58,7 @@ Returns:
         openWorldHint: false,
       },
     },
-    async ({ admin_token, client_id, allowed_keys, description }) => {
-      if (!isAdminToken(admin_token, env.VAULT_ADMIN_TOKEN as string)) {
-        return { content: [{ type: "text" as const, text: JSON.stringify({ error: ERR_ADMIN_ONLY }) }] };
-      }
-
+    async ({ client_id, allowed_keys, description }) => {
       const bearerToken = generateBearerToken();
       const tokenHash = await hashToken(bearerToken);
 
@@ -101,7 +93,6 @@ Returns:
 The client's ACL entry is deleted. Their bearer token immediately stops working.
 
 Args:
-  - admin_token (string): Admin bearer token
   - client_id (string): ID of the client to revoke
 
 Returns:
@@ -111,7 +102,6 @@ Returns:
     "message": string
   }`,
       inputSchema: z.object({
-        admin_token: z.string().min(1).describe("Admin bearer token"),
         client_id: z.string().min(1).describe("Client ID to revoke"),
       }),
       annotations: {
@@ -121,10 +111,7 @@ Returns:
         openWorldHint: false,
       },
     },
-    async ({ admin_token, client_id }) => {
-      if (!isAdminToken(admin_token, env.VAULT_ADMIN_TOKEN as string)) {
-        return { content: [{ type: "text" as const, text: JSON.stringify({ error: ERR_ADMIN_ONLY }) }] };
-      }
+    async ({ client_id }) => {
 
       const client = await getClientById(client_id, env.VAULT_ACL);
       if (!client) {
@@ -153,7 +140,6 @@ Returns:
 Replaces the existing allowed_keys list entirely.
 
 Args:
-  - admin_token (string): Admin bearer token
   - client_id (string): Target client ID
   - allowed_keys (string[]): New complete list of allowed key names
 
@@ -164,7 +150,6 @@ Returns:
     "message": string
   }`,
       inputSchema: z.object({
-        admin_token: z.string().min(1).describe("Admin bearer token"),
         client_id: z.string().min(1).describe("Target client ID"),
         allowed_keys: z.array(z.string().min(1)).min(0).describe("New complete ACL (replaces existing)"),
       }),
@@ -175,10 +160,7 @@ Returns:
         openWorldHint: false,
       },
     },
-    async ({ admin_token, client_id, allowed_keys }) => {
-      if (!isAdminToken(admin_token, env.VAULT_ADMIN_TOKEN as string)) {
-        return { content: [{ type: "text" as const, text: JSON.stringify({ error: ERR_ADMIN_ONLY }) }] };
-      }
+    async ({ client_id, allowed_keys }) => {
 
       const client = await getClientById(client_id, env.VAULT_ACL);
       if (!client) {
@@ -205,19 +187,8 @@ Returns:
     {
       title: "List Vault Clients",
       description: `List all provisioned clients and their ACL metadata (admin only).
-Never returns bearer tokens.
-
-Args:
-  - admin_token (string): Admin bearer token
-
-Returns:
-  {
-    "clients": [{ "id", "allowed_keys", "description", "createdAt" }],
-    "total": number
-  }`,
-      inputSchema: z.object({
-        admin_token: z.string().min(1).describe("Admin bearer token"),
-      }),
+Never returns bearer tokens.`,
+      inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -225,10 +196,7 @@ Returns:
         openWorldHint: false,
       },
     },
-    async ({ admin_token }) => {
-      if (!isAdminToken(admin_token, env.VAULT_ADMIN_TOKEN as string)) {
-        return { content: [{ type: "text" as const, text: JSON.stringify({ error: ERR_ADMIN_ONLY }) }] };
-      }
+    async () => {
 
       const list = await env.VAULT_ACL.list({ prefix: ACL_PREFIX });
       const clients = await Promise.all(
@@ -262,7 +230,6 @@ Returns:
 Optionally filter by caller_id or key_name.
 
 Args:
-  - admin_token (string): Admin bearer token
   - page (number): Page number (default: 1)
   - caller_id (string, optional): Filter by specific caller
   - key_name (string, optional): Filter by specific key name
@@ -275,7 +242,6 @@ Returns:
     "per_page": number
   }`,
       inputSchema: z.object({
-        admin_token: z.string().min(1).describe("Admin bearer token"),
         page: z.number().int().min(1).default(1).describe("Page number"),
         caller_id: z.string().optional().describe("Filter by caller ID"),
         key_name: z.string().optional().describe("Filter by key name"),
@@ -287,11 +253,7 @@ Returns:
         openWorldHint: false,
       },
     },
-    async ({ admin_token, page, caller_id, key_name }) => {
-      if (!isAdminToken(admin_token, env.VAULT_ADMIN_TOKEN as string)) {
-        return { content: [{ type: "text" as const, text: JSON.stringify({ error: ERR_ADMIN_ONLY }) }] };
-      }
-
+    async ({ page, caller_id, key_name }) => {
       const log = await getAccessLog(env.VAULT_LOG, { page, caller_id, key_name });
       return { content: [{ type: "text" as const, text: JSON.stringify(log) }] };
     }

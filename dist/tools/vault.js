@@ -3,13 +3,13 @@
 // buildwhilebleeding.com
 // ============================================================
 import { z } from "zod";
-import { resolveCallerFromToken, callerCanAccessKey, } from "../services/auth.js";
+import { callerCanAccessKey } from "../services/auth.js";
 import { logAccess } from "../services/audit.js";
-import { ERR_UNAUTHORIZED, ERR_FORBIDDEN, ERR_KEY_NOT_FOUND, } from "../constants.js";
+import { ERR_FORBIDDEN, ERR_KEY_NOT_FOUND, } from "../constants.js";
 // ----------------------------------------------------------
 // Register all client-facing vault tools
 // ----------------------------------------------------------
-export function registerVaultTools(server, env, clientIp) {
+export function registerVaultTools(server, env, clientIp, client) {
     // --------------------------------------------------------
     // TOOL: vault_get_secret
     // --------------------------------------------------------
@@ -21,7 +21,6 @@ Caller must provide their bearer token in the request context. The vault checks 
 to confirm the caller is authorized to access the requested key name.
 
 Args:
-  - bearer_token (string): The caller's provisioned bearer token
   - key_name (string): The name of the secret to retrieve (e.g. "OPENAI_API_KEY")
 
 Returns:
@@ -34,11 +33,9 @@ Returns:
   }
 
 Error cases:
-  - "Unauthorized" if bearer token is invalid
   - "Forbidden" if caller exists but lacks access to this key
   - "Key not found" if key exists in ACL but not in vault secrets`,
         inputSchema: z.object({
-            bearer_token: z.string().min(1).describe("Caller bearer token"),
             key_name: z.string().min(1).max(128).describe("Secret key name to retrieve"),
         }),
         annotations: {
@@ -47,21 +44,8 @@ Error cases:
             idempotentHint: true,
             openWorldHint: false,
         },
-    }, async ({ bearer_token, key_name }) => {
+    }, async ({ key_name }) => {
         const timestamp = new Date().toISOString();
-        const client = await resolveCallerFromToken(bearer_token, env.VAULT_ACL);
-        if (!client) {
-            await logAccess(env.VAULT_LOG, {
-                caller_id: "unknown",
-                key_name,
-                access_granted: 0,
-                reason: ERR_UNAUTHORIZED,
-                timestamp,
-                ip: clientIp,
-            });
-            const result = { value: null, access_granted: false, key_name, caller_id: "unknown", reason: ERR_UNAUTHORIZED };
-            return { content: [{ type: "text", text: JSON.stringify(result) }] };
-        }
         if (!callerCanAccessKey(client, key_name)) {
             await logAccess(env.VAULT_LOG, {
                 caller_id: client.id,
@@ -104,32 +88,15 @@ Error cases:
     server.registerTool("vault_list_secrets", {
         title: "List Accessible Secrets",
         description: `List the names of all secrets the caller is authorized to access.
-Returns key names ONLY — never values.
-
-Args:
-  - bearer_token (string): The caller's provisioned bearer token
-
-Returns:
-  {
-    "caller_id": string,
-    "allowed_keys": string[],  // List of key names the caller can access
-    "total": number
-  }`,
-        inputSchema: z.object({
-            bearer_token: z.string().min(1).describe("Caller bearer token"),
-        }),
+Returns key names ONLY — never values.`,
+        inputSchema: z.object({}),
         annotations: {
             readOnlyHint: true,
             destructiveHint: false,
             idempotentHint: true,
             openWorldHint: false,
         },
-    }, async ({ bearer_token }) => {
-        const client = await resolveCallerFromToken(bearer_token, env.VAULT_ACL);
-        if (!client) {
-            const result = { error: ERR_UNAUTHORIZED, allowed_keys: [], total: 0 };
-            return { content: [{ type: "text", text: JSON.stringify(result) }] };
-        }
+    }, async () => {
         const result = {
             caller_id: client.id,
             allowed_keys: client.allowedKeys,
