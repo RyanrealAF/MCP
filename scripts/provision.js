@@ -17,7 +17,10 @@ if (!ADMIN_TOKEN) {
 async function callTool(toolName, input) {
   const res = await fetch(`${VAULT_URL}/mcp`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${ADMIN_TOKEN}`
+    },
     body: JSON.stringify({
       jsonrpc: "2.0",
       id: 1,
@@ -28,6 +31,9 @@ async function callTool(toolName, input) {
   const data = await res.json();
   if (data.error) throw new Error(JSON.stringify(data.error));
   const text = data.result?.content?.[0]?.text;
+  if (!text) {
+    throw new Error(`Empty response from tool ${toolName}. Full response: ${JSON.stringify(data)}`);
+  }
   return JSON.parse(text);
 }
 
@@ -46,7 +52,6 @@ async function main() {
   // 2. Provision a test client
   console.log("\n2. Provisioning test client: claude-test-agent...");
   const client = await callTool("vault_provision_client", {
-    admin_token: ADMIN_TOKEN,
     client_id: "claude-test-agent",
     allowed_keys: ["OPENAI_API_KEY", "HUGGINGFACE_TOKEN"],
     description: "Test agent for local development",
@@ -58,7 +63,7 @@ async function main() {
 
   // 3. List all clients
   console.log("\n3. Listing all clients...");
-  const list = await callTool("vault_list_clients", { admin_token: ADMIN_TOKEN });
+  const list = await callTool("vault_list_clients", {});
   console.log(`   Total clients: ${list.total}`);
   list.clients.forEach((c) => {
     console.log(`   - ${c.id}: [${c.allowed_keys.join(", ")}]`);

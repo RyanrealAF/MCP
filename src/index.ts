@@ -4,7 +4,6 @@
 // ============================================================
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { VaultEnv } from "./types.js";
 import { registerVaultTools } from "./tools/vault.js";
 import { registerAdminTools } from "./tools/admin.js";
@@ -61,7 +60,6 @@ export default {
       }
 
       const client = await resolveCallerFromToken(bearerToken, env.VAULT_ACL);
-
       const isAdmin = bearerToken === env.VAULT_ADMIN_TOKEN;
 
       if (!client && !isAdmin) {
@@ -81,61 +79,45 @@ export default {
         registerAdminTools(server, env);
       }
 
-
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-        enableJsonResponse: true,
-      });
-
       const body = await request.json();
 
-      // Build a minimal Express-like req/res shim for CF Workers
-      const { readable, writable } = new TransformStream();
-      const writer = writable.getWriter();
-      const encoder = new TextEncoder();
+      // Manual tool execution for Cloudflare Workers
+      // We need to wait for the response to be sent back through the transport
+      let mcpResponse: any = null;
+      let resolveResponse: (value: any) => void;
+      const responsePromise = new Promise(resolve => {
+        resolveResponse = resolve;
+      });
 
-      const fakeRes = {
-        statusCode: 200,
-        headers: {} as Record<string, string>,
-        setHeader(name: string, value: string) { this.headers[name] = value; },
-        getHeader(name: string) { return this.headers[name]; },
-        writeHead(status: number) { this.statusCode = status; },
-        write(chunk: string | Uint8Array) {
-          writer.write(typeof chunk === "string" ? encoder.encode(chunk) : chunk);
+      const transport = {
+        async start() {},
+        async close() {},
+        async send(message: any) {
+          mcpResponse = message;
+          resolveResponse(message);
         },
-        end(chunk?: string | Uint8Array) {
-          if (chunk) this.write(chunk);
-          writer.close();
-        },
-        on() { return this; },
+        onmessage: null as any,
+        onerror: null as any,
+        onclose: null as any,
       };
 
-      // Use the JSON response mode — simpler for CF Workers
-      let responseBody: unknown;
-      let responseStatus = 200;
+      await server.connect(transport as any);
 
-      try {
-        await server.connect(transport);
-        const result = await transport.handleRequest(
-          { body, headers: Object.fromEntries(request.headers.entries()), method: "POST" } as never,
-          fakeRes as never,
-          body
-        );
-        void result;
-      } catch (err) {
-        responseStatus = 500;
-        responseBody = { error: "Internal server error" };
+      // The onmessage handler is actually attached to the underlying server's transport
+      const internalServer = (server as any).server;
+      if (internalServer && internalServer.transport && typeof internalServer.transport.onmessage === 'function') {
+         await internalServer.transport.onmessage(body);
       }
 
-      // Collect response from stream
-      const responseText = await new Response(readable).text();
+      // Wait for the response (with a timeout just in case)
+      const timeoutPromise = new Promise(resolve => setTimeout(() => resolve({ error: { code: -32603, message: "Internal error: timeout" } }), 5000));
+      const finalResponse = await Promise.race([responsePromise, timeoutPromise]);
 
-      return new Response(responseText || JSON.stringify(responseBody ?? {}), {
-        status: responseStatus,
+      return new Response(JSON.stringify(finalResponse), {
+        status: 200,
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
-          ...fakeRes.headers,
         },
       });
     }

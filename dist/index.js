@@ -3,7 +3,6 @@
 // buildwhilebleeding.com
 // ============================================================
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { registerVaultTools } from "./tools/vault.js";
 import { registerAdminTools } from "./tools/admin.js";
 import { initializeSchema } from "./services/audit.js";
@@ -67,51 +66,39 @@ export default {
             if (isAdmin) {
                 registerAdminTools(server, env);
             }
-            const transport = new StreamableHTTPServerTransport({
-                sessionIdGenerator: undefined,
-                enableJsonResponse: true,
-            });
             const body = await request.json();
-            // Build a minimal Express-like req/res shim for CF Workers
-            const { readable, writable } = new TransformStream();
-            const writer = writable.getWriter();
-            const encoder = new TextEncoder();
-            const fakeRes = {
-                statusCode: 200,
-                headers: {},
-                setHeader(name, value) { this.headers[name] = value; },
-                getHeader(name) { return this.headers[name]; },
-                writeHead(status) { this.statusCode = status; },
-                write(chunk) {
-                    writer.write(typeof chunk === "string" ? encoder.encode(chunk) : chunk);
+            // Manual tool execution for Cloudflare Workers
+            // We need to wait for the response to be sent back through the transport
+            let mcpResponse = null;
+            let resolveResponse;
+            const responsePromise = new Promise(resolve => {
+                resolveResponse = resolve;
+            });
+            const transport = {
+                async start() { },
+                async close() { },
+                async send(message) {
+                    mcpResponse = message;
+                    resolveResponse(message);
                 },
-                end(chunk) {
-                    if (chunk)
-                        this.write(chunk);
-                    writer.close();
-                },
-                on() { return this; },
+                onmessage: null,
+                onerror: null,
+                onclose: null,
             };
-            // Use the JSON response mode — simpler for CF Workers
-            let responseBody;
-            let responseStatus = 200;
-            try {
-                await server.connect(transport);
-                const result = await transport.handleRequest({ body, headers: Object.fromEntries(request.headers.entries()), method: "POST" }, fakeRes, body);
-                void result;
+            await server.connect(transport);
+            // The onmessage handler is actually attached to the underlying server's transport
+            const internalServer = server.server;
+            if (internalServer && internalServer.transport && typeof internalServer.transport.onmessage === 'function') {
+                await internalServer.transport.onmessage(body);
             }
-            catch (err) {
-                responseStatus = 500;
-                responseBody = { error: "Internal server error" };
-            }
-            // Collect response from stream
-            const responseText = await new Response(readable).text();
-            return new Response(responseText || JSON.stringify(responseBody ?? {}), {
-                status: responseStatus,
+            // Wait for the response (with a timeout just in case)
+            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve({ error: { code: -32603, message: "Internal error: timeout" } }), 5000));
+            const finalResponse = await Promise.race([responsePromise, timeoutPromise]);
+            return new Response(JSON.stringify(finalResponse), {
+                status: 200,
                 headers: {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Origin": "*",
-                    ...fakeRes.headers,
                 },
             });
         }
